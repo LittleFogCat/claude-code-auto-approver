@@ -55,28 +55,61 @@ def _clf_ensure_tk_works() -> None:
         return  # current interpreter is fine -- fast path
 
     candidates: list[str] = []
+
+    # Highest priority: explicit override.
     env_py = os.environ.get("CLF_GUI_PYTHON", "").strip()
     if env_py:
         candidates.append(env_py)
 
-    sysdrive = os.environ.get("SystemDrive", "C:")
-    for ver in ("312", "311", "313"):
-        for sub in (
-            r"%s\\Python%s\\pythonw.exe",
-            r"%s\\Python%s-64\\pythonw.exe",
-            r"%s\\Python%s\\python.exe",
-            r"%s\\Python%s-64\\python.exe",
-        ):
-            p = _P(sub % (sysdrive, ver))
+    # 1) Scan every directory in PATH that contains python[w].exe.
+    seen_dirs: set[str] = set()
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        if not d or d in seen_dirs:
+            continue
+        seen_dirs.add(d)
+        for exe in ("pythonw.exe", "python.exe", "python3.exe"):
+            p = _P(d) / exe
             if p.exists():
                 candidates.append(str(p))
 
-    # uv-managed pythons; skip Python 3.14 and any path inside .venv.
+    # 2) Drive letters and common install roots.
+    import string
+    drives = [f"{c}:\\" for c in string.ascii_uppercase
+              if os.path.exists(f"{c}:\\")]
+    for drv in drives:
+        for prefix in (
+            "Python",
+            r"\software\Python",
+            r"\tools\Python",
+            r"\dev\Python",
+        ):
+            for ver in ("312", "311", "313", "310"):
+                for tag in ("", "-64"):
+                    for exe in ("pythonw.exe", "python.exe"):
+                        p = _P(f"{drv}{prefix}{ver}{tag}\\{exe}")
+                        if p.exists():
+                            candidates.append(str(p))
+
+    # 3) uv-managed pythons (skip 3.14 -- its tcl layout is broken).
     import glob
-    for p in glob.glob(_P.home().as_posix() + "/AppData/Local/Programs/Python/Python3*/pythonw.exe"):
-        if "Python314" in p or ".venv" in p:
-            continue
-        candidates.append(p)
+    import re as _re_clf
+    uv_root = _P.home() / "AppData" / "Roaming" / "uv" / "python"
+    if uv_root.exists():
+        for sub in glob.glob(str(uv_root) + "/cpython-3.*"):
+            m = _re_clf.search(r"cpython-(\d+\.\d+)", sub)
+            if m and m.group(1) == "3.14":
+                continue
+            for exe in ("pythonw.exe", "python.exe"):
+                p = _P(sub) / exe
+                if p.exists():
+                    candidates.append(str(p))
+
+    # 4) AppData\Local\Programs\Python\Python* (Microsoft Store / standard).
+    for sub in glob.glob(str(_P.home()) + "/AppData/Local/Programs/Python/Python3*"):
+        for exe in ("pythonw.exe", "python.exe"):
+            p = _P(sub) / exe
+            if p.exists() and "Python314" not in p.name:
+                candidates.append(str(p))
 
     chosen = None
     for cand in candidates:
@@ -472,6 +505,15 @@ class ObserverApp:
         except Exception:
             # Fallback: just return what we have, never crash the GUI.
             return iso_ts
+
+    def _consume_line(self, line: str, initial: bool = False) -> None:
+        """Parse one log line into a DecisionRow and insert it into the tree.
+
+        Called both for historical replay (initial=True) and live poll
+        tailing (initial=False). Skips non-decision lines, parses JSON,
+        inserts at the top of the list (newest-first) and registers the
+        row in the Treeview.
+        """
         line = line.strip()
         if not line:
             return

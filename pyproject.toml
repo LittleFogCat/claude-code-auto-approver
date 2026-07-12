@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "PreToolUse hook classifier for Claude Code: deterministic rules + Claude Haiku 4.5 fallback"
 readme = "README.md"
 requires-python = ">=3.12"
-authors = [{ name = "littlefogcat" }]
+authors = [{ name = "Claude Code Auto-Approver Contributors" }]
 license = { text = "MIT" }
 dependencies = [
     "fastapi>=0.115.0",
