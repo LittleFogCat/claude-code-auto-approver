@@ -1,0 +1,70 @@
+# Bundled default config.
+#
+# This file ships sensible out-of-the-box defaults so the classifier works
+# the moment a user installs the package:
+#   - service / behavior / logging settings
+#   - three built-in rules (R-001 dangerous commands, R-002 sensitive paths,
+#     R-003 branch protection)
+#
+# Override per-user in ~/.config/clf/rules.yaml (or via $CLF_RULES_FILE),
+# or per-env via CLF_* variables. ANTHROPIC_API_KEY is always env-only.
+
+service:
+  host: 127.0.0.1
+  port: 8765
+
+behavior:
+  fail_open_on_error: true
+  enable_claude_fallback: true
+  claude_model: claude-haiku-4-5
+  claude_timeout_s: 8
+
+logging:
+  level: INFO
+  file: logs/decisions.jsonl
+
+rules:
+  - id: R-001-deny-dangerous-commands
+    type: denylist_cmd
+    priority: 10
+    severity: critical
+    enabled: true
+    pattern: "*DEFAULT*"
+    reason: "command matches dangerous-command denylist"
+
+  - id: R-002-block-sensitive-paths
+    type: sensitive_path
+    priority: 10
+    severity: high
+    enabled: true
+    paths:
+      - "**/.env"
+      - "**/.env.*"
+      - "**/.envrc"
+      - "**/id_rsa"
+      - "**/id_ed25519"
+      - "**/id_dsa"
+      - "**/id_ecdsa"
+      - "**/.ssh/id_*"
+      - "**/.aws/credentials"
+      - "**/.aws/config"
+      - "**/*.pem"
+      - "**/*.key"
+      - "**/secrets.yaml"
+      - "**/secrets.yml"
+      - "/etc/passwd"
+      - "/etc/shadow"
+      - "C:/Users/*/.ssh/id_*"
+      - "C:/Users/*/.aws/credentials"
+      - "**/.npmrc"
+      - "**/.pypirc"
+      - "**/.netrc"
+    reason: "target path is in sensitive list"
+
+  - id: R-003-protect-main-branches
+    type: branch_protect
+    priority: 20
+    severity: high
+    enabled: true
+    pattern: "*DEFAULT*"
+    reason: "push to protected branch"

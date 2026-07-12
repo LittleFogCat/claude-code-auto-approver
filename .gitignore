@@ -1,0 +1,52 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# uv
+uv.lock
+
+# Project
+.env
+.env.local
+logs/*.json
+logs/*.jsonl
+logs/*.log
+!logs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Personal / local-only (do not commit)
+.claude/settings.local.json
+*.local.json
+_test.py
+_*.py
+
+# Local-only git plumbing (created by this sandbox just for the initial push)
+.run/repo.git/
+.run/repo.git.lock

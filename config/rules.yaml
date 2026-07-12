@@ -1,0 +1,52 @@
+# Reference rules template.
+#
+# The contents of this file are NOT auto-loaded as defaults — those ship in
+# `config/default.yaml`. To customise per-user, copy this file to
+# `~/.config/clf/rules.yaml` (or `$CLF_RULES_FILE`) and edit; then restart the
+# service. Any rules you define there will fully replace the defaults below.
+
+rules:
+  - id: R-001-deny-dangerous-commands
+    type: denylist_cmd
+    priority: 10
+    severity: critical
+    enabled: true
+    pattern: "*DEFAULT*"
+    reason: "command matches dangerous-command denylist"
+
+  - id: R-002-block-sensitive-paths
+    type: sensitive_path
+    priority: 10
+    severity: high
+    enabled: true
+    paths:
+      - "**/.env"
+      - "**/.env.*"
+      - "**/.envrc"
+      - "**/id_rsa"
+      - "**/id_ed25519"
+      - "**/id_dsa"
+      - "**/id_ecdsa"
+      - "**/.ssh/id_*"
+      - "**/.aws/credentials"
+      - "**/.aws/config"
+      - "**/*.pem"
+      - "**/*.key"
+      - "**/secrets.yaml"
+      - "**/secrets.yml"
+      - "/etc/passwd"
+      - "/etc/shadow"
+      - "C:/Users/*/.ssh/id_*"
+      - "C:/Users/*/.aws/credentials"
+      - "**/.npmrc"
+      - "**/.pypirc"
+      - "**/.netrc"
+    reason: "target path is in sensitive list"
+
+  - id: R-003-protect-main-branches
+    type: branch_protect
+    priority: 20
+    severity: high
+    enabled: true
+    pattern: "*DEFAULT*"
+    reason: "push to protected branch"
