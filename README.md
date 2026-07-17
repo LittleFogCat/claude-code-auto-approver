@@ -1,5 +1,7 @@
 # Claude Code Classifier
 
+English | [简体中文](./README.zh-CN.md)
+
 A local **PreToolUse hook backend** for Claude Code. Sits between Claude Code
 and the OS, decides whether each tool call should run, and blocks dangerous
 ones automatically.
