@@ -101,55 +101,32 @@ def _release_lock() -> None:
 def _spawn_service() -> None:
     """Best-effort: launch uvicorn in the background and detach.
 
-    The launch goes directly via ``subprocess.Popen`` with the Win32
-    ``CREATE_NO_WINDOW`` flag (and ``DETACHED_PROCESS``), and uses
-    ``pythonw.exe`` (GUI subsystem) -- both of which together prevent
-    any console allocation for the child. Going direct (no
-    ``wscript -> run_hidden.vbs`` wrapper) removes the brief cmdline
-    parser console flash that the wrapper chain otherwise triggers on
-    cold-start of the classifier service.
+    Launch goes via ``subprocess.Popen`` with the Win32
+    ``CREATE_NO_WINDOW`` flag, using the plain console-subsystem
+    ``python.exe`` (NOT ``pythonw.exe``). The .venv executables are uv
+    trampolines: the ``pythonw.exe`` trampoline is GUI-subsystem and
+    spawns the BASE ``python.exe`` (console) with no console to
+    inherit, so Windows allocates a brand-new console for it -- on
+    Win11 the default-terminal handoff pops a Windows Terminal window
+    that flashes on screen. With the console ``python.exe`` trampoline
+    plus CREATE_NO_WINDOW, the trampoline gets a hidden console and
+    the base interpreter simply inherits it.
+
+    Windows never kills a child when its parent exits, so no
+    DETACHED_PROCESS flag is needed (and it must not be combined with
+    CREATE_NO_WINDOW anyway).
     """
     host, port = _parse_host_port(ENDPOINT)
     log_path = Path(os.environ.get("CLF_BRIDGE_SERVICE_LOG", str(Path(__file__).resolve().parents[3] / "logs" / "service.log")))
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_fp = open(log_path, "ab", buffering=0)
 
-    # Resolve a GUI-subsystem Python for uvicorn. When this hook is itself
-    # running as pythonw.exe (because Claude Code invokes it through
-    # scripts/run_hidden.vbs which swaps python.exe -> pythonw.exe),
-    # sys.executable is already pythonw.exe. Otherwise (rare -- e.g. dev
-    # runs via plain ``python -m classifier.bridge.quiet_runner``) we look
-    # for a sibling pythonw.exe before falling back to sys.executable.
-    py_for_uvicorn = sys.executable
-    if py_for_uvicorn.lower().endswith("python.exe"):
-        candidate = py_for_uvicorn[:-10] + "pythonw.exe"
-        if Path(candidate).exists():
-            py_for_uvicorn = candidate
-
-    # Launch uvicorn directly via subprocess + CREATE_NO_WINDOW -- no
-    # wscript/vbs wrapper this time. We do not need stdin/stdout pipes
-    # back from the service (uvicorn's own logging is the only stdout
-    # consumer); what we DO need is for the launch to NOT allocate a
-    # console window.
-    #
-    # CREATE_NO_WINDOW (0x08000000) suppresses the console allocation
-    # entirely at the Win32 CreateProcessW level. DETACHED_PROCESS
-    # (0x00000008) detaches the child from the parent's console/process
-    # group so closing our hook process never takes the service down.
-    #
-    # Previous incarnation used wscript -> run_hidden.vbs -> pythonw.exe,
-    # which still allocated a brief console for the cmdline parser on
-    # cold-start -- the residual "approval black box" flash seen on the
-    # very first tool call of a session. Going direct skips that flash
-    # while preserving every other observable behaviour (health check,
-    # lockfile, log redirection).
     flags = 0
     if sys.platform == "win32":
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
 
     argv = [
-        py_for_uvicorn, "-m", "uvicorn", "classifier.main:app",
+        sys.executable, "-m", "uvicorn", "classifier.main:app",
         "--host", host, "--port", str(port), "--log-level", "info",
     ]
 

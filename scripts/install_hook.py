@@ -33,22 +33,10 @@ HOOK_TIMEOUT = int(os.environ.get("CLF_HOOK_TIMEOUT", "60"))
 def _venv_python() -> Path | None:
     """Return the project's .venv python interpreter, if present.
 
-    We deliberately do NOT prefer ``pythonw.exe`` here, even though
-    it would suppress the console window on its own. ``pythonw.exe``
-    is a GUI-subsystem binary whose stdout does not reliably reach
-    Claude Code over the pipe it uses to read the Decision JSON, so
-    using it would break the hook protocol.
-
-    Instead, the black-box suppression is handled by
-    ``scripts/run_hidden.vbs``: the VBScript uses
-    ``WScript.Shell.Run`` with ``WindowStyle=0`` (SW_HIDE), which
-    hides the spawned process's console window even when the child
-    is a console-subsystem binary like ``python.exe``.
-
-    This is the same belt-and-braces pattern used by
-    ``D:/code/python/nonewindowcli/run_hidden.vbs`` -- the
-    difference is that nonewindowcli's demo writes to a file (no
-    stdout pipe), while the hook MUST keep stdout working.
+    We use the console-subsystem ``python.exe`` on Windows (not
+    ``pythonw.exe``): Claude Code runs the hook via a hidden-console
+    Git Bash, and a console child of that bash inherits the hidden
+    console -- no window is ever shown.
     """
     candidates = [
         REPO_ROOT / ".venv" / "Scripts" / "python.exe",  # Windows
@@ -64,25 +52,26 @@ def _venv_python() -> Path | None:
 def _hook_command(python_exe: Path) -> str:
     """Build the shell command Claude Code runs for each PreToolUse event.
 
-    Wraps the Python launch in ``scripts/run_hidden.vbs`` so the spawned
-    process never shows a console window: ``wscript.exe`` (the VBScript host)
-    is GUI-subsystem and the VBScript uses ``WScript.Shell.Run`` with
-    ``WindowStyle=0`` (SW_HIDE).
+    Claude Code executes hook commands through Git Bash with
+    ``windowsHide: true`` -- i.e. the bash process already owns a HIDDEN
+    console. A console-subsystem child launched directly from that bash
+    inherits the hidden console and allocates no window of its own.
 
-    The command is a flat token list. The VBScript joins those tokens with
-    quoted spaces, which keeps the round-trip
-    ``settings.json -> shell -> wscript.exe -> WScript.Arguments ->
-    WScript.Shell.Run`` robust against paths that contain spaces (the
-    project venv and source paths almost always do on Windows).
+    Do NOT reintroduce a ``wscript.exe``/``run_hidden.vbs`` wrapper or
+    ``pythonw.exe``: the .venv scripts are uv trampolines, and the
+    ``pythonw.exe`` trampoline spawns the BASE ``python.exe``
+    (console subsystem) from a GUI-subsystem parent that owns no
+    console -- so Windows allocates a brand-new console for it, which
+    Win11 hands to Windows Terminal and the user sees a Terminal
+    window flash on every single tool call.
 
-    The :mod:`classifier.bridge.quiet_runner` module is still invoked to
-    redirect ``sys.stderr`` to NUL 鈥?it's the belt-and-braces fallback in
-    case the VBScript host itself ever emits something to its own stderr on
-    a startup error path.
+    The :mod:`classifier.bridge.quiet_runner` module stays in the
+    chain as belt-and-braces: it redirects ``sys.stderr`` (and a
+    broken ``sys.stdout``) to NUL before importing the bridge, in case
+    the interpreter is ever launched without an inherited stderr pipe.
     """
     py = str(python_exe)
-    vbs = str(REPO_ROOT / "scripts" / "run_hidden.vbs")
-    return f'wscript.exe //nologo "{vbs}" "{py}" -m classifier.bridge.quiet_runner'
+    return f'"{py}" -m classifier.bridge.quiet_runner'
 
 
 def main() -> int:
