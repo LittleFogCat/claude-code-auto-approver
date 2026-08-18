@@ -47,6 +47,5 @@ Thumbs.db
 _test.py
 _*.py
 
-# Local-only git plumbing (created by this sandbox just for the initial push)
-.run/repo.git/
-.run/repo.git.lock
+# Runtime dir: bridge lockfile, background uvicorn logs, local diagnostic scripts
+.run/

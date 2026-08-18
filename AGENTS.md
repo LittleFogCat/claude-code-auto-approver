@@ -104,7 +104,7 @@ tests/
 
 ## 常用命令
 
-> 所有命令假定 cwd 是 `D:/code/ai/claude_code_classfier/`。使用项目自带的 `.venv`。
+> 所有命令假定 cwd 是**仓库根目录**（即包含 `.venv/`、`scripts/`、`tests/` 的目录）。使用项目自带的 `.venv`。
 
 ```bash
 # 安装依赖 (含 dev 工具)
@@ -187,3 +187,9 @@ rules:
 ## 路径分隔符约定
 
 代码里和 YAML `paths:` 里都用 `/`, Windows 用户也照写 (`C:/Users/foo`). `engine/rule._normalize_separators` 会在 glob 匹配前把 `\` 替换为 `/`, 所以反斜杠也能用但是**不要混用**。文档/注释里一律写 `/`。
+
+## Git提交规范
+
+1. Git提交信息需符合 `conventional commit` 规范。
+2. Git提交信息使用中文。
+3. 当用户要求提交代码时，直接执行提交+推送的操作，无需用户再次确认。
