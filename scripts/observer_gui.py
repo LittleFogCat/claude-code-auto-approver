@@ -184,9 +184,7 @@ POLL_MS = 300
 HEALTH_POLL_MS = 1000
 HEALTH_URL = 'http://127.0.0.1:8765/health'
 HEALTH_TIMEOUT_S = 0.5
-VBS_PATH = REPO_ROOT / 'scripts' / 'run_hidden.vbs'
 PY_EXE = REPO_ROOT / '.venv' / 'Scripts' / 'python.exe'
-PYW_EXE = REPO_ROOT / '.venv' / 'Scripts' / 'pythonw.exe'
 
 # A small palette inspired by VS Code dark+ (matches Claude Code's vibe).
 BG          = '#1e1e1e'
@@ -879,7 +877,7 @@ class ObserverApp:
         except Exception as e:  # noqa: BLE001
             log(f'stop failed: {e}')
         time.sleep(0.8)
-        log('starting fresh uvicorn (via run_hidden.vbs)...')
+        log('starting fresh uvicorn...')
         try:
             self._start_uvicorn()
         except Exception as e:  # noqa: BLE001
@@ -943,35 +941,24 @@ class ObserverApp:
                 pass
 
     def _start_uvicorn(self) -> None:
-        # Build the inner command: .venv\Scripts\python.exe -m uvicorn
-        # classifier.main:app --host 127.0.0.1 --port 8765
-        inner = (
-            f'\"{PY_EXE}\" -m uvicorn classifier.main:app '
-            '--host 127.0.0.1 --port 8765 --log-level info'
-        )
-        # Use pythonw.exe to avoid a console window flash on the first
-        # launch. vbs will run pythonw via wscript, but the launched
-        # pythonw.exe is GUI subsystem (no console allocation at all).
-        # We still wrap in vbs for belt-and-braces window hiding.
-        # Note: using pythonw for uvicorn means log capture is the only
-        # stdout path -- we accept that (uvicorn already writes to
-        # logs/service.log via the redirect in hook_bridge._spawn_service).
-        py_for_uvicorn = PYW_EXE if PYW_EXE.exists() else PY_EXE
-        inner_pyw = (
-            f'\"{py_for_uvicorn}\" -m uvicorn classifier.main:app '
-            '--host 127.0.0.1 --port 8765 --log-level info'
-        )
-        # Service log file
+        # Launch uvicorn directly with CREATE_NO_WINDOW. The venv
+        # python.exe is a uv trampoline whose base interpreter is
+        # console-subsystem; with CREATE_NO_WINDOW the trampoline gets a
+        # hidden console and the base interpreter inherits it -- no
+        # Windows Terminal flash. (The old wscript+vbs+pythonw path went
+        # through a GUI-subsystem trampoline whose base python.exe had no
+        # console to inherit and popped a new Terminal window.)
         log_dir = REPO_ROOT / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)
         log_fp = open(log_dir / 'service.log', 'ab', buffering=0)
-        # Launch via wscript + vbs (no flash). We pass the inner cmd as a
-        # single pre-quoted argument (vbs joins WScript.Arguments with
-        # re-quoting, so a single pre-quoted token comes through cleanly).
         subprocess.Popen(
-            ['wscript.exe', '//nologo', str(VBS_PATH), inner_pyw],
+            [
+                str(PY_EXE), '-m', 'uvicorn', 'classifier.main:app',
+                '--host', '127.0.0.1', '--port', '8765', '--log-level', 'info',
+            ],
             stdin=subprocess.DEVNULL, stdout=log_fp, stderr=log_fp,
             close_fds=True,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
 
     # ------------------------------------------------------------------
@@ -1014,34 +1001,20 @@ class ObserverApp:
         self.root.after(0, self._on_close)
 
     def _spawn_fresh_gui(self) -> None:
-        # Find the vbs launcher (prefer it for zero-console-window spawn).
-        vbs_path = VBS_PATH  # module-level constant from earlier patch
-        if not vbs_path.exists():
-            raise RuntimeError(f'run_hidden.vbs not found at {vbs_path}')
-        # Pass a FLAT TOKEN LIST (not a pre-quoted string) to vbs.
-        # run_hidden.vbs reads WScript.Arguments and re-quotes each token
-        # itself with double quotes -- so a pre-quoted string here would
-        # get double-wrapped and WScript.Shell.Run would fail to find
-        # the resulting filename (Windows error 80070002).
-        #
-        # The flat-token form is the same pattern the hook itself uses
-        # in ~/.claude/settings.json:
-        #     wscript.exe //nologo run_hidden.vbs python.exe -m ...
-        #
-        # vbs then joins with quoted spaces and calls WScript.Shell.Run
-        # with WindowStyle=0 (SW_HIDE) so the new pythonw.exe GUI starts
-        # without a console flash. WaitOnReturn=False detaches wscript
-        # from the child so it returns immediately.
+        # Spawn the GUI directly with CREATE_NO_WINDOW. The venv
+        # python.exe is a uv trampoline; with CREATE_NO_WINDOW the
+        # trampoline owns a hidden console and the base interpreter
+        # inherits it, so no Windows Terminal window pops. (Do NOT use
+        # the pythonw trampoline here: it is GUI-subsystem and its base
+        # python.exe child gets a brand-new console -> Terminal window.)
         subprocess.Popen(
             [
-                'wscript.exe',
-                '//nologo',
-                str(vbs_path),
-                str(PYW_EXE),
+                str(PY_EXE),
                 str(Path(__file__).resolve()),
             ],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, close_fds=True,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
         # NOTE: we do NOT call self.root.destroy() here. _do_restart_app()
         # waits ~300ms (so the child GUI has a chance to appear first) and
